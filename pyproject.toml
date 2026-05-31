@@ -42,7 +42,6 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.10",
     "bandit>=1.7",
-    "legionforge-dev-rig",
 ]
 
 [project.urls]
