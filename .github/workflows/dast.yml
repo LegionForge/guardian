@@ -20,13 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       security-events: write
+    env:
+      GUARDIAN_DB_PASSWORD: test-password
+      GUARDIAN_REQUIRE_AUTH: "false"
     steps:
       - uses: actions/checkout@v4
 
       - name: Start Guardian (Docker Compose)
         run: |
-          GUARDIAN_DB_PASSWORD=test-password \
-          GUARDIAN_REQUIRE_AUTH=false \
           docker compose up -d
           echo "Waiting for Guardian to be ready..."
 
