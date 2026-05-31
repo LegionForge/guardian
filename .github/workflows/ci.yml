@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    uses: LegionForge/dev-rig/.github/workflows/lint.yml@main
+    with:
+      source-dirs: "src/legionforge_guardian"
+
+  test:
+    uses: LegionForge/dev-rig/.github/workflows/test.yml@main
+    with:
+      coverage-source: "src/legionforge_guardian"
+      coverage-threshold: 70
+
+  sast:
+    uses: LegionForge/dev-rig/.github/workflows/sast.yml@main
+    with:
+      source-dirs: "src/legionforge_guardian"
+    permissions:
+      security-events: write
+
+  audit:
+    uses: LegionForge/dev-rig/.github/workflows/audit.yml@main
+
+  secrets:
+    uses: LegionForge/dev-rig/.github/workflows/secrets.yml@main
+
+  sbom:
+    uses: LegionForge/dev-rig/.github/workflows/sbom.yml@main
+
+  dast:
+    needs: test
+    name: OWASP ZAP Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    env:
+      GUARDIAN_DB_PASSWORD: test-password
+      GUARDIAN_REQUIRE_AUTH: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Guardian (Docker Compose)
+        run: |
+          docker compose up -d
+          echo "Waiting for Guardian to be ready..."
+
+      - name: Wait for Guardian /health
+        run: |
+          timeout 60 bash -c '
+            until curl -sf http://localhost:9766/health >/dev/null 2>&1; do
+              echo "Waiting for Guardian..."
+              sleep 2
+            done
+            echo "Guardian is ready!"
+          '
+        timeout-minutes: 2
+
+      - name: Run OWASP ZAP Baseline Scan
+        run: |
+          docker run --rm --network host --user 0 \
+            -v $(pwd):/zap/wrk:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+              -t "http://localhost:9766/health" \
+              -r zap-report.html
+        continue-on-error: true
+
+      - name: Upload ZAP Report
+        uses: actions/upload-artifact@v4
+        if: always() && hashFiles('zap-report.html') != ''
+        with:
+          name: zap-report
+          path: zap-report.html
+          retention-days: 90
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
