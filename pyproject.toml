@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "legionforge-guardian"
-version = "0.1.0"
+version = "0.1.1"
 description = "Deterministic security sidecar for LLM agent frameworks"
 readme = "README.md"
 license = {text = "MIT"}
