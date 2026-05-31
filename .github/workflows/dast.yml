@@ -44,11 +44,11 @@ jobs:
 
       - name: Run OWASP ZAP Baseline Scan
         run: |
-          docker run --rm --network host \
+          docker run --rm --network host --user 0 \
             -v $(pwd):/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
-              -t "http://localhost:9766" \
+              -t "http://localhost:9766/health" \
               -r zap-report.html
         continue-on-error: true
 
