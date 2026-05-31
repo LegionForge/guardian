@@ -26,6 +26,14 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.2.2
 
+      - name: Harden Runner
+        uses: step-security/harden-runner@91182cccc01eb5e619899d080e0dcf722d51ea50  # v2.10.1
+        with:
+          egress-policy: audit
+          allowed-endpoints: |
+            github.com:443
+            api.github.com:443
+
       - name: Start Guardian (Docker Compose)
         run: |
           docker compose up -d
