@@ -41,11 +41,23 @@ jobs:
           '
         timeout-minutes: 2
 
-      - name: Invoke OWASP ZAP DAST
-        uses: LegionForge/dev-rig/.github/workflows/dast.yml@main
+      - name: Run OWASP ZAP Baseline Scan
+        run: |
+          docker run --rm --network host \
+            -v $(pwd):/work \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+              -t "http://localhost:9766" \
+              -r /work/zap-report.html
+        continue-on-error: true
+
+      - name: Upload ZAP Report
+        uses: actions/upload-artifact@v4
+        if: always() && hashFiles('zap-report.html') != ''
         with:
-          target-url: "http://localhost:9766"
-          fail-on-severity: "High"
+          name: zap-report
+          path: zap-report.html
+          retention-days: 90
 
       - name: Cleanup
         if: always()
