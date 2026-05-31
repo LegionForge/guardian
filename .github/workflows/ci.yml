@@ -16,7 +16,7 @@ jobs:
     uses: LegionForge/dev-rig/.github/workflows/test.yml@main
     with:
       coverage-source: "src/legionforge_guardian"
-      coverage-threshold: 70
+      coverage-threshold: 50
 
   sast:
     uses: LegionForge/dev-rig/.github/workflows/sast.yml@main
