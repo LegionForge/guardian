@@ -18,6 +18,8 @@ jobs:
   dast:
     name: OWASP ZAP Scan
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
     steps:
       - uses: actions/checkout@v4
 
@@ -44,8 +46,6 @@ jobs:
         with:
           target-url: "http://localhost:9766"
           fail-on-severity: "High"
-        permissions:
-          security-events: write
 
       - name: Cleanup
         if: always()
