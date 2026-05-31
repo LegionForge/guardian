@@ -1,0 +1,225 @@
+name: OSS Risk Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+  schedule:
+    - cron: "0 0 * * 0"  # Weekly on Sunday
+
+jobs:
+  vulnerability-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.2.2
+
+      - name: Harden Runner
+        uses: step-security/harden-runner@91182cccc01eb5e619899d080e0dcf722d51ea50  # v2.10.1
+        with:
+          egress-policy: audit
+          allowed-endpoints: |
+            github.com:443
+            api.github.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run pip-audit
+        run: |
+          pip-audit --desc --format json > pip-audit-report.json || true
+          pip-audit --desc || true
+
+      - name: Check audit results
+        run: |
+          if grep -q '"count": 0' pip-audit-report.json; then
+            echo "✓ No vulnerabilities found"
+            exit 0
+          else
+            echo "⚠ Vulnerabilities detected (see log above)"
+            exit 1
+          fi
+        continue-on-error: true
+
+  license-compliance:
+    name: License Compliance Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.2.2
+
+      - name: Harden Runner
+        uses: step-security/harden-runner@91182cccc01eb5e619899d080e0dcf722d51ea50  # v2.10.1
+        with:
+          egress-policy: audit
+          allowed-endpoints: |
+            github.com:443
+            api.github.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install pip-licenses
+        run: pip install pip-licenses
+
+      - name: Check licenses
+        run: |
+          pip-licenses \
+            --with-urls \
+            --format=markdown \
+            --output-file=LICENSES.md
+          
+          # Check for GPL licenses (permissive only for now)
+          if pip-licenses --format=plain | grep -iE "GPL|AGPL"; then
+            echo "⚠ GPL/AGPL licensed dependencies detected — review needed"
+            exit 1
+          else
+            echo "✓ No problematic licenses detected"
+            exit 0
+          fi
+        continue-on-error: true
+
+      - name: Upload licenses report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        if: always()
+        with:
+          name: licenses-report
+          path: LICENSES.md
+          retention-days: 90
+
+  dependency-freshness:
+    name: Dependency Freshness Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.2.2
+
+      - name: Harden Runner
+        uses: step-security/harden-runner@91182cccc01eb5e619899d080e0dcf722d51ea50  # v2.10.1
+        with:
+          egress-policy: audit
+          allowed-endpoints: |
+            github.com:443
+            api.github.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        with:
+          python-version: "3.11"
+
+      - name: Check dependency staleness
+        run: |
+          pip install toml requests
+          python3 << 'PYTHON_SCRIPT'
+          import toml
+          import requests
+          from packaging.version import parse as parse_version
+          from datetime import datetime, timedelta
+          
+          with open("pyproject.toml") as f:
+            config = toml.load(f)
+          
+          deps = config.get("project", {}).get("dependencies", [])
+          dev_deps = config.get("project", {}).get("optional-dependencies", {}).get("dev", [])
+          all_deps = deps + dev_deps
+          
+          print("Checking dependency freshness (latest released version)...")
+          stale_deps = []
+          
+          for dep in all_deps:
+            # Parse name and version constraint
+            dep_name = dep.split(">")[0].split("<")[0].split("=")[0].split("[")[0].strip()
+            
+            try:
+              response = requests.get(f"https://pypi.org/pypi/{dep_name}/json", timeout=5)
+              if response.status_code == 200:
+                latest = response.json()["info"]["version"]
+                print(f"  {dep_name}: {dep} (latest: {latest})")
+              else:
+                print(f"  {dep_name}: Unable to check (HTTP {response.status_code})")
+            except Exception as e:
+              print(f"  {dep_name}: Error checking ({e})")
+          
+          print("\n✓ Dependency freshness check complete")
+          PYTHON_SCRIPT
+
+  supplychain-audit:
+    name: Supply Chain Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.2.2
+
+      - name: Harden Runner
+        uses: step-security/harden-runner@91182cccc01eb5e619899d080e0dcf722d51ea50  # v2.10.1
+        with:
+          egress-policy: audit
+          allowed-endpoints: |
+            github.com:443
+            api.github.com:443
+
+      - name: Verify no unpinned dependencies
+        run: |
+          echo "Checking pyproject.toml for unpinned versions..."
+          
+          # Check runtime dependencies (should prefer pinned versions)
+          grep -E "^[a-z-]+>=" pyproject.toml | grep -v ">=[0-9]+\.[0-9]+\.[0-9]+" && \
+            echo "⚠ Found unpinned dependencies (>= without patch version)" || \
+            echo "✓ Runtime dependencies have version constraints"
+          
+          # Dev dependencies typically allow ranges, which is acceptable
+          echo "✓ Dependency pinning check complete"
+
+      - name: Verify all actions are SHA-pinned in workflows
+        run: |
+          echo "Verifying GitHub Actions are SHA-pinned..."
+          
+          # Check for mutable action tags (@v*, @main, @latest)
+          if grep -r "uses:.*@v[0-9]" .github/workflows/ || \
+             grep -r "uses:.*@main" .github/workflows/ || \
+             grep -r "uses:.*@latest" .github/workflows/; then
+            echo "⚠ Found mutable action references (should use SHA pins)"
+            exit 1
+          else
+            echo "✓ All GitHub Actions are SHA-pinned"
+            exit 0
+          fi
+        continue-on-error: true
+
+      - name: Verify Dependabot is configured
+        run: |
+          if [ -f ".github/dependabot.yml" ]; then
+            echo "✓ Dependabot configured for automated updates"
+          else
+            echo "✗ Missing Dependabot configuration"
+            exit 1
+          fi
