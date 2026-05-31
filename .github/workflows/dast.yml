@@ -1,0 +1,52 @@
+name: DAST (Guardian)
+
+# Dynamic Application Security Testing — OWASP ZAP baseline scan against running Guardian instance.
+# Tests for:
+#   - Missing HTTP security headers (X-Content-Type-Options, CSP, HSTS, etc.)
+#   - Authentication enforcement on protected endpoints (/check, /rules)
+#   - Response body information disclosure
+#   - Session/token lifecycle issues
+#   - Input fuzzing on /check POST endpoint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  dast:
+    name: OWASP ZAP Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Guardian (Docker Compose)
+        run: |
+          GUARDIAN_DB_PASSWORD=test-password \
+          GUARDIAN_REQUIRE_AUTH=false \
+          docker compose up -d
+          echo "Waiting for Guardian to be ready..."
+
+      - name: Wait for Guardian /health
+        run: |
+          timeout 60 bash -c '
+            until curl -sf http://localhost:9766/health >/dev/null 2>&1; do
+              echo "Waiting for Guardian..."
+              sleep 2
+            done
+            echo "Guardian is ready!"
+          '
+        timeout-minutes: 2
+
+      - name: Invoke OWASP ZAP DAST
+        uses: LegionForge/dev-rig/.github/workflows/dast.yml@main
+        with:
+          target-url: "http://localhost:9766"
+          fail-on-severity: "High"
+        permissions:
+          security-events: write
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
