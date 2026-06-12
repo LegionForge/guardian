@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "legionforge-guardian"
-version = "0.1.1"
+version = "0.1.0"
 description = "Deterministic security sidecar for LLM agent frameworks"
 readme = "README.md"
 license = {text = "MIT"}
@@ -35,20 +35,15 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
-    "pytest-cov>=5.0",
     "respx>=0.21",
     "black~=24.10",
     "httpx>=0.27",
-    "ruff>=0.4",
-    "mypy>=1.10",
-    "bandit>=1.7",
 ]
 
 [project.urls]
-Homepage = "https://github.com/LegionForge/LegionForge-Guardian"
-Repository = "https://github.com/LegionForge/LegionForge-Guardian"
-Issues = "https://github.com/LegionForge/LegionForge-Guardian/issues"
-Changelog = "https://github.com/LegionForge/LegionForge-Guardian/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/LegionForge/legionforge-guardian"
+Documentation = "https://github.com/LegionForge/legionforge-guardian#readme"
+"Bug Tracker" = "https://github.com/LegionForge/legionforge-guardian/issues"
 
 [project.scripts]
 legionforge-guardian = "legionforge_guardian.app:main"

@@ -1,121 +1,95 @@
-# Security Policy
+# Security Policy — legionforge-guardian
 
-## Overview
+## Threat Model
 
-LegionForge Guardian follows [OWASP SAMM](https://owaspsamm.org/) practices and [LegionForge's Security Roadmap](https://github.com/LegionForge/dev-rig) for supply-chain and application security.
+Guardian protects LLM agents against **adversarial inputs that manipulate tool
+execution**. Specifically:
 
-## Reporting Security Issues
+### What Guardian Protects Against
 
-If you discover a security vulnerability, please email **jp@legionforge.org** with:
-- Description of the vulnerability
-- Steps to reproduce (if applicable)
-- Your name and contact information (optional)
+| Threat | Guardian's Defense |
+|---|---|
+| **Prompt injection via tool arguments** | Check 3: 9-pattern destructive pattern detector on all tool args |
+| **Unregistered tool invocation** | Check 1: tool registry — unknown tools are halted immediately |
+| **Tool tampering after registration** | Checks 1+5: revocation + hash integrity verification |
+| **Forbidden capability invocation** | Check 2: explicit denylist (`register_tool`, `spawn_agent_direct`, etc.) |
+| **Novel tool sequences** | Check 4: sequence contracts — deviations are sandboxed |
+| **Out-of-scope tool access** | Check 0: JWT task token scoping — tools outside the token's grant are blocked |
+| **Emergent threat patterns** | Check 6: adaptive rules hot-reloaded from DB without restart |
+| **Audit trail tampering** | SHA-256 hash chain on every check result — verifiable offline |
 
-**Please do not open public GitHub issues for security vulnerabilities.**
+### What Guardian Does NOT Protect Against
 
-## Security Controls
+Guardian is a **tool-invocation firewall**, not a full security solution. It does
+not protect against:
 
-### Phase 1: Supply Chain Hardening (v0.1.2+)
+- **Prompt injection in LLM outputs that don't reach tool calls.** If an injected
+  prompt causes the LLM to produce harmful text without calling a tool, Guardian is
+  not in that path.
+- **Compromised tool implementations.** Guardian validates that the right tool is
+  called with safe arguments. It does not sandbox the tool's execution environment.
+- **Model-level attacks** (jailbreaks, training data poisoning, model extraction).
+  These operate above or below Guardian's enforcement boundary.
+- **Network-level attacks on the sidecar itself.** Guardian should run on localhost
+  and should not be exposed to the internet. Treat it as an internal trust boundary,
+  not an internet-facing service.
+- **Insider threats.** An operator with DB access can modify `tool_registry` or
+  `threat_rules` directly. Guardian trusts its own database.
+- **Zero-day patterns not in the current pattern set.** The 9-pattern destructive
+  pattern detector covers known adversarial techniques. Novel attack patterns require
+  new rules (via adaptive rules or a code update).
 
-#### 1.1 Action Pinning & Dependency Automation
+### Deployment Security Notes
 
-- ✅ All GitHub Actions pinned to commit SHAs (no mutable tags like `@v4` or `@main`)
-- ✅ Dependabot configured to auto-update action references weekly
-- ✅ Dependency updates require review before merging
+- Run Guardian on `127.0.0.1` (localhost), not `0.0.0.0`, unless you have network
+  controls in place. The `/check` endpoint must not be internet-accessible.
+- `TASK_TOKEN_SECRET` must be set in production (`GUARDIAN_REQUIRE_AUTH=true`).
+  Store it in a secrets manager (Vault, AWS Secrets Manager, macOS Keychain) —
+  not in plaintext environment files.
+- The PostgreSQL user Guardian connects with should have `SELECT/INSERT` only on
+  `tool_registry`, `threat_rules`, `threat_events`, and `audit_log`. Do not grant
+  `DROP`, `CREATE`, or `TRUNCATE`.
+- Guardian's audit log (`audit_log` table) uses a SHA-256 hash chain. Do not delete
+  rows — use the `prune_audit_log()` function provided by LegionForge which
+  maintains the chain integrity.
 
-**Files**: `.github/dependabot.yml`, `.github/workflows/*.yml`
+---
 
-#### 1.2 Least-Privilege Permissions
+## Vulnerability Reporting
 
-- ✅ No `GITHUB_TOKEN` default permission escalation
-- ✅ Each workflow declares minimal required permissions
-- ✅ `security-events: write` only on workflows uploading security reports
+**Please do not report security vulnerabilities in public GitHub issues.**
 
-**Permissions by workflow:**
-- `ci.yml`: Delegates to dev-rig reusable workflows
-- `dast.yml`: `security-events: write` (SARIF upload)
-- `publish.yml`: `contents: read` (build), `id-token: write` (OIDC), `attestations: write` (SLSA)
-- `lint-workflows.yml`: `contents: read`
+Report vulnerabilities to: **security@legionforge.org**
 
-#### 1.3 Workflow Security Linting
+Include:
+- A description of the vulnerability
+- Steps to reproduce
+- Affected version
+- Your assessment of impact and exploitability
 
-- ✅ zizmor scans all workflows for OWASP CI/CD Top 10 risks
-- ✅ Automated checks for:
-  - Unpinned action references
-  - Template injection vulnerabilities
-  - Dangerous event triggers
-  - Excessive GITHUB_TOKEN permissions
+We will acknowledge receipt within 48 hours and provide a timeline for a fix.
+Valid reports are credited in the release notes unless you prefer to remain anonymous.
 
-**File**: `.github/workflows/lint-workflows.yml`
+### Scope
 
-#### 1.4 Egress Control & Runtime Hardening
+In scope for vulnerability reports:
+- Authentication bypass on `/check` or `/rules`
+- Pattern bypass — a proof-of-concept that gets a destructive pattern through Check 3
+- Sequence contract bypass
+- Hash integrity bypass (tools that pass Check 5 despite being tampered)
+- Audit log forgery — producing a valid hash chain entry without the chain key
+- Denial-of-service on the hot path (`/check`) via crafted input
 
-- ✅ harden-runner enabled on all Guardian-controlled jobs
-- ✅ Restricts outbound network to whitelisted endpoints
-- ✅ Prevents exfiltration post-compromise
+Out of scope:
+- Vulnerabilities requiring DB-level write access (insider threat — by design)
+- Attacks on the LLM itself (outside Guardian's boundary)
+- Issues with frameworks that Guardian is integrated into
 
-**Egress policy**: `audit` (logs violations, doesn't fail builds in v0.1.2)
+---
 
-**Allowed endpoints by workflow**:
-- All workflows: `github.com:443`, `api.github.com:443`
-- DAST: ↑ (scanning localhost)
-- Publish: ↑ + `pypi.org:443`, `upload.pypi.org:443`
+## Supported Versions
 
-### Phase 2: OWASP Top 10 Testing
-
-- ✅ **SAST** (Static): semgrep (p/python, p/fastapi) + CodeQL for injection/access control
-- ✅ **DAST** (Dynamic): OWASP ZAP baseline scan for runtime auth/headers/session issues
-- ✅ **Dependency Audit**: pip-audit for vulnerable packages
-- ✅ **Secret Scanning**: gitleaks prevents credential commits
-- ✅ **SBOM**: Cyclonedx for supply-chain transparency
-
-### Phase 3: Build Provenance (v0.1.2+)
-
-- ✅ SLSA v1.1 build attestations on all PyPI releases
-- ✅ Verifiable supply chain: code → artifact → registry
-- ✅ `actions/attest-build-provenance` generates cryptographic proof
-
-## Known Issues & Roadmap
-
-### v0.1.2 (In Progress)
-- [ ] Apply Phase 1.5: OSS Risk Audit MVP
-- [ ] Upgrade CI coverage threshold: 50% → 70%
-- [ ] Document OWASP ZAP findings and remediation
-
-### v0.1.3 (Planned)
-- [ ] Escalate harden-runner egress to block mode
-- [ ] Phase 2 SOTA (OSV-Scanner, SLSA L2)
-- [ ] Hardened Python install (PEP 668)
-
-### v0.2.0+ (Future)
-- [ ] Governance policy enforcement
-- [ ] Attestation verification on installs
-
-## CI/CD Pipeline
-
-**Trigger**: Push/PR to main
-
-**Jobs**:
-1. Lint (dev-rig): ruff, black
-2. Test (dev-rig): pytest + coverage
-3. SAST (dev-rig): semgrep + CodeQL
-4. Audit (dev-rig): pip-audit
-5. Secrets (dev-rig): gitleaks
-6. SBOM (dev-rig): cyclonedx
-7. Lint-Workflows: zizmor
-8. DAST: OWASP ZAP
-
-**Publish Trigger**: Git tag `v*`
-
-## References
-
-- [OWASP SAMM](https://owaspsamm.org/)
-- [OWASP Top 10](https://owasp.org/Top10/)
-- [OWASP CI/CD Top 10](https://owasp.org/www-project-ci-cd-security/)
-- [SLSA Framework](https://slsa.dev/)
-- [zizmor](https://github.com/woodruffw/zizmor)
-- [harden-runner](https://github.com/step-security/harden-runner)
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+| Version | Supported |
+|---|---|
+| 0.1.x | Yes |
+| < 0.1.0 | No |

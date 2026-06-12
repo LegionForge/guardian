@@ -20,19 +20,9 @@ jobs:
         python-version: ["3.11", "3.12"]
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.2.2
+      - uses: actions/checkout@v4
 
-      - name: Harden Runner
-        uses: step-security/harden-runner@91182cccc01eb5e619899d080e0dcf722d51ea50  # v2.10.1
-        with:
-          egress-policy: audit
-          allowed-endpoints: |
-            github.com:443
-            api.github.com:443
-            pypi.org:443
-            files.pythonhosted.org:443
-
-      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -41,14 +31,7 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Run test suite
-        run: python -m pytest tests/ -v --tb=short --cov=src/legionforge_guardian --cov-report=xml
+        run: python -m pytest tests/ -v --tb=short
 
       - name: Check formatting
         run: python -m black --check --target-version py311 src/ tests/
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@6d798873191c83af2a9f2f4f35bc92ffed5f49ad  # v5.1.1
-        if: always()
-        with:
-          files: ./coverage.xml
-          fail_ci_if_error: false

@@ -48,12 +48,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-import httpx
-import jwt
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-
 # ── Module-level startup timestamp (for uptime_seconds in /health) ────────────
 _startup_time: float = time.monotonic()
 
@@ -74,6 +68,13 @@ _metrics: dict[str, int] = {
     "threat_GUARDIAN_AUTH_FAILURE": 0,
     "threat_CANARY_TRIGGERED": 0,
 }
+
+import jwt
+
+import httpx
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 # ── Phase G1: Guardian-internal definitions (no src.* imports) ────────────────
 # Inlined from src.security.core and src.security.acl so guardian.py can start

@@ -1,20 +1,18 @@
 name: Publish to PyPI
 
-# Triggered when a semver tag (v*) is pushed.
-# Uses OIDC Trusted Publishing — no long-lived API token required.
-# Actions are pinned to commit SHAs for supply-chain security.
+# Triggered when a version tag (v*) is pushed to the guardian repo.
+# This workflow lives in packages/guardian/ and is synced there via the
+# subtree push — it runs inside the legionforge-guardian repo, not LegionForge.
 #
-# Prerequisites (one-time manual steps — do NOT merge without completing):
-#   1. Create a "pypi" environment in GitHub repo Settings → Environments
-#   2. Add a Trusted Publisher on pypi.org/manage/account/publishing/:
-#      - Owner:    LegionForge
-#      - Repo:     LegionForge-Guardian
-#      - Workflow: publish.yml
-#      - Environment: pypi
+# Prerequisites (one-time setup):
+#   1. Create a PyPI API token scoped to legionforge-guardian
+#   2. Store it as PYPI_API_TOKEN in LegionForge/legionforge-guardian repo secrets
 #
 # To cut a release:
-#   git tag v0.2.0 -m "Release v0.2.0"
-#   git push origin v0.2.0
+#   # In the guardian repo (after sync):
+#   git tag v0.1.0 -m "Initial public release"
+#   git push origin v0.1.0
+#   # This workflow triggers automatically
 
 on:
   push:
@@ -22,72 +20,29 @@ on:
       - "v*"
 
 jobs:
-  build:
-    name: Build
+  build-and-publish:
+    name: Build and publish to PyPI
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      id-token: write  # for OIDC trusted publishing (alternative to API token)
 
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/checkout@v4
 
-      - name: Harden Runner
-        uses: step-security/harden-runner@91182cccc01eb5e619899d080e0dcf722d51ea50  # v2.10.1
-        with:
-          egress-policy: audit
-          allowed-endpoints: |
-            github.com:443
-            api.github.com:443
-            pypi.python.org:443
-
-      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install build
-        run: pip install build
+      - name: Install build dependencies
+        run: pip install build twine
 
       - name: Build distribution
         run: python -m build
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
-        with:
-          name: dist
-          path: dist/
-          if-no-files-found: error
-
-  publish:
-    name: Publish to PyPI
-    needs: build
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
-
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@91182cccc01eb5e619899d080e0dcf722d51ea50  # v2.10.1
-        with:
-          egress-policy: audit
-          allowed-endpoints: |
-            github.com:443
-            api.github.com:443
-            upload.pypi.org:443
-            pypi.org:443
-
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
-        with:
-          name: dist
-          path: dist/
-
-      - name: Attest build provenance (SLSA)
-        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2  # v2.2.3
-        with:
-          subject-path: dist/*
+      - name: Verify distribution
+        run: twine check dist/*
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@6733eb7d741f0b11ec6a39b58540dab7590f9b7d  # v1.14.0
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          attestations: true
+          password: ${{ secrets.PYPI_API_TOKEN }}
