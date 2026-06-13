@@ -48,7 +48,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-import httpx
 import jwt
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
