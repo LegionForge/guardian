@@ -39,3 +39,23 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
+
+  # Docker base images
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+    allow:
+      - dependency-type: "direct"
+    reviewers:
+      - "jp-cruz"
+    assignees:
+      - "jp-cruz"
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
