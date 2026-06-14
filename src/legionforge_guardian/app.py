@@ -67,7 +67,7 @@ _metrics: dict[str, int] = {
     "threat_TOOL_HASH_MISMATCH": 0,
     "threat_DESTRUCTIVE_PATTERN": 0,
     "threat_SEQUENCE_VIOLATION": 0,
-    "threat_INVALID_TASK_TOKEN": 0,
+    "threat_INVALID_TASK_TOKEN": 0,  # nosec B105 — metrics counter, not a password
     "threat_TOOL_SCOPE_VIOLATION": 0,
     "threat_GUARDIAN_MISCONFIGURED": 0,
     "threat_GUARDIAN_AUTH_FAILURE": 0,
