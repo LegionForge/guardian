@@ -48,10 +48,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-import httpx
 import jwt
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 # ── Module-level startup timestamp (for uptime_seconds in /health) ────────────
@@ -68,12 +67,26 @@ _metrics: dict[str, int] = {
     "threat_TOOL_HASH_MISMATCH": 0,
     "threat_DESTRUCTIVE_PATTERN": 0,
     "threat_SEQUENCE_VIOLATION": 0,
-    "threat_INVALID_TASK_TOKEN": 0,
+    "threat_INVALID_TASK_TOKEN": 0,  # nosec B105 — metrics counter, not a password
     "threat_TOOL_SCOPE_VIOLATION": 0,
     "threat_GUARDIAN_MISCONFIGURED": 0,
     "threat_GUARDIAN_AUTH_FAILURE": 0,
     "threat_CANARY_TRIGGERED": 0,
 }
+
+# ── Log safety ───────────────────────────────────────────────────────────────
+# Strip control characters (including \n, \r, ANSI escapes) from user-supplied
+# values before embedding them in log messages. Prevents log injection attacks
+# where an attacker-controlled field could forge log lines or corrupt terminals.
+_LOG_UNSAFE_RE: re.Pattern[str] = re.compile(
+    r"[\x00-\x1f\x7f-\x9f]|\x1b\[[0-9;]*[A-Za-z]"
+)
+
+
+def _log_safe(value: object, max_len: int = 200) -> str:
+    """Sanitize a value for safe inclusion in log messages."""
+    return _LOG_UNSAFE_RE.sub("?", str(value))[:max_len]
+
 
 # ── Phase G1: Guardian-internal definitions (no src.* imports) ────────────────
 # Inlined from src.security.core and src.security.acl so guardian.py can start
@@ -795,6 +808,8 @@ async def _append_audit_log_direct(
                 ),
             )
             new_row = await cur2.fetchone()
+            if new_row is None:
+                raise RuntimeError("audit_log INSERT returned no row")
             seq = new_row["seq"]
             ts_str = (
                 new_row["ts"].isoformat()
@@ -810,7 +825,7 @@ async def _append_audit_log_direct(
             )
             await conn.commit()
         logger.debug(
-            f"[guardian/audit] Appended seq={seq} event_type={event_type} agent_id={agent_id}"
+            f"[guardian/audit] Appended seq={seq} event_type={_log_safe(event_type)} agent_id={_log_safe(agent_id)}"
         )
         return seq
     except Exception as exc:
@@ -1082,7 +1097,7 @@ async def health() -> JSONResponse:
 
 
 @app.get("/metrics")
-async def metrics() -> JSONResponse:
+async def metrics() -> Response:
     """
     Prometheus text format metrics. Unauthenticated (consistent with main app /metrics).
     No prometheus_client dependency — text is formatted manually.
@@ -1193,8 +1208,8 @@ async def check(
     resp = _check_0_task_token(request.tool_id, request.task_token)
     if resp:
         logger.warning(
-            f"[guardian/check] HALT check=0 tool={request.tool_id!r} "
-            f"agent={request.agent_id!r} threat={resp.threat_type!r}"
+            f"[guardian/check] HALT check=0 tool={_log_safe(request.tool_id)} "
+            f"agent={_log_safe(request.agent_id)} threat={_log_safe(resp.threat_type)}"
         )
         return _record_check_metrics(resp)
 
@@ -1202,8 +1217,8 @@ async def check(
     resp = _check_1_tool_registry(request.tool_id)
     if resp:
         logger.warning(
-            f"[guardian/check] HALT check=1 tool={request.tool_id!r} "
-            f"agent={request.agent_id!r} reason={resp.reason!r}"
+            f"[guardian/check] HALT check=1 tool={_log_safe(request.tool_id)} "
+            f"agent={_log_safe(request.agent_id)} reason={_log_safe(resp.reason)}"
         )
         return _record_check_metrics(resp)
 
@@ -1212,8 +1227,8 @@ async def check(
     # Any call to it is immediate evidence of a probing attack or hallucination.
     if request.tool_id == "guardian_canary":
         logger.warning(
-            f"[guardian/check] CANARY_TRIGGERED agent={request.agent_id!r} "
-            f"run={request.run_id!r}"
+            f"[guardian/check] CANARY_TRIGGERED agent={_log_safe(request.agent_id)} "
+            f"run={_log_safe(request.run_id)}"
         )
         asyncio.create_task(
             _write_threat_event_direct(
@@ -1240,8 +1255,8 @@ async def check(
     resp = _check_2_capability_boundary(request.action, request.tool_id)
     if resp:
         logger.warning(
-            f"[guardian/check] HALT check=2 action={request.action!r} "
-            f"tool={request.tool_id!r} agent={request.agent_id!r}"
+            f"[guardian/check] HALT check=2 action={_log_safe(request.action)} "
+            f"tool={_log_safe(request.tool_id)} agent={_log_safe(request.agent_id)}"
         )
         return _record_check_metrics(resp)
 
@@ -1263,8 +1278,8 @@ async def check(
         )
     elif resp:
         logger.warning(
-            f"[guardian/check] HALT check=3 tool={request.tool_id!r} "
-            f"agent={request.agent_id!r} threat={resp.threat_type!r}"
+            f"[guardian/check] HALT check=3 tool={_log_safe(request.tool_id)} "
+            f"agent={_log_safe(request.agent_id)} threat={_log_safe(resp.threat_type)}"
         )
         asyncio.create_task(
             _write_threat_event_direct(
@@ -1287,8 +1302,8 @@ async def check(
     resp = _check_4_sequence(request.agent_id, request.tool_id, request.sequence_so_far)
     if resp:
         logger.warning(
-            f"[guardian/check] SANDBOX check=4 tool={request.tool_id!r} "
-            f"agent={request.agent_id!r} seq={request.sequence_so_far}"
+            f"[guardian/check] SANDBOX check=4 tool={_log_safe(request.tool_id)} "
+            f"agent={_log_safe(request.agent_id)} seq={_log_safe(request.sequence_so_far)}"
         )
         return _record_check_metrics(resp)
 
@@ -1296,8 +1311,8 @@ async def check(
     resp = _check_5_hash_integrity(request.tool_id, request.args)
     if resp:
         logger.warning(
-            f"[guardian/check] HALT check=5 tool={request.tool_id!r} "
-            f"agent={request.agent_id!r} reason={resp.reason!r}"
+            f"[guardian/check] HALT check=5 tool={_log_safe(request.tool_id)} "
+            f"agent={_log_safe(request.agent_id)} reason={_log_safe(resp.reason)}"
         )
         return _record_check_metrics(resp)
 
@@ -1309,8 +1324,8 @@ async def check(
     if resp:
         logger.warning(
             f"[guardian/check] {'HALT' if resp.tier == 'halt' else 'SANDBOX'} check=6 "
-            f"tool={request.tool_id!r} agent={request.agent_id!r} "
-            f"rule_type={resp.threat_type!r}"
+            f"tool={_log_safe(request.tool_id)} agent={_log_safe(request.agent_id)} "
+            f"rule_type={_log_safe(resp.threat_type)}"
         )
         return _record_check_metrics(resp)
 
@@ -1352,8 +1367,8 @@ async def report(request: ReportRequest) -> JSONResponse:
     )
     if seq >= 0:
         logger.info(
-            f"[guardian/report] event_type={request.event_type!r} "
-            f"agent_id={request.agent_id!r} seq={seq}"
+            f"[guardian/report] event_type={_log_safe(request.event_type)} "
+            f"agent_id={_log_safe(request.agent_id)} seq={seq}"
         )
         return JSONResponse({"status": "logged", "seq": seq})
     return JSONResponse(

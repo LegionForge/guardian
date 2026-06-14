@@ -45,7 +45,7 @@ class GuardianClient:
     def __init__(
         self,
         url: str = _DEFAULT_GUARDIAN_URL,
-        auth_token: str = "",
+        auth_token: str = "",  # nosec B107 — empty default means "no auth", not a hardcoded password
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
         self.url = url.rstrip("/")
