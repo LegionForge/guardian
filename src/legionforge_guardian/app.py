@@ -50,7 +50,7 @@ from typing import Any
 
 import jwt
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 # ── Module-level startup timestamp (for uptime_seconds in /health) ────────────
@@ -808,6 +808,8 @@ async def _append_audit_log_direct(
                 ),
             )
             new_row = await cur2.fetchone()
+            if new_row is None:
+                raise RuntimeError("audit_log INSERT returned no row")
             seq = new_row["seq"]
             ts_str = (
                 new_row["ts"].isoformat()
@@ -1095,7 +1097,7 @@ async def health() -> JSONResponse:
 
 
 @app.get("/metrics")
-async def metrics() -> JSONResponse:
+async def metrics() -> Response:
     """
     Prometheus text format metrics. Unauthenticated (consistent with main app /metrics).
     No prometheus_client dependency — text is formatted manually.
