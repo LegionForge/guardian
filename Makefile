@@ -9,7 +9,7 @@
 
 PYTHON ?= python3
 
-.PHONY: help install-dev test test-checks test-sdk test-live test-guardian-live lint format build clean
+.PHONY: help install-dev test test-cov test-checks test-sdk test-live test-guardian-live lint format build clean
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | \
@@ -18,10 +18,13 @@ help:
 install-dev: ## Install package + all dev dependencies (pytest, respx, black)
 	$(PYTHON) -m pip install -e ".[dev]"
 
-test: ## Run the full test suite (45 tests, <1s, no services required)
+test: ## Run the full test suite (no services required)
 	$(PYTHON) -m pytest tests/ -v
 
-test-checks: ## Run only the 7-check enforcement tests (34 tests)
+test-cov: ## Run full test suite with coverage report (fail under 50%)
+	$(PYTHON) -m pytest tests/ -v --cov=legionforge_guardian --cov-report=term-missing --cov-fail-under=50
+
+test-checks: ## Run only the 7-check enforcement tests
 	$(PYTHON) -m pytest tests/test_checks.py -v
 
 test-sdk: ## Run only the SDK client tests (11 tests)

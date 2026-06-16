@@ -16,6 +16,10 @@ Coverage:
 """
 
 import asyncio
+from datetime import datetime, timedelta, timezone
+
+import jwt
+import pytest
 
 import legionforge_guardian.app as _app
 
@@ -405,7 +409,6 @@ def test_health_response_contains_required_fields(monkeypatch):
     monkeypatch.setattr(_app, "_adaptive_rules", [])
 
     import asyncio
-    import importlib
 
     # Patch psycopg inside _app to raise so db_reachable=False
     import sys
@@ -467,7 +470,6 @@ def test_metrics_endpoint_returns_prometheus_text(monkeypatch):
 
 def test_record_check_metrics_increments_halt(monkeypatch):
     """_record_check_metrics increments halt counter and returns the response."""
-    saved = dict(_app._metrics)
     monkeypatch.setattr(_app, "_metrics", {k: 0 for k in _app._metrics})
 
     resp = _app.GuardianCheckResponse(
@@ -497,3 +499,98 @@ def test_record_check_metrics_increments_sandbox(monkeypatch):
     _app._record_check_metrics(resp)
     assert _app._metrics["checks_sandbox"] == 1
     assert _app._metrics["threat_SEQUENCE_VIOLATION"] == 1
+
+
+# ── Check 0: Task token ACL ───────────────────────────────────────────────────
+
+_TEST_SECRET = "test-guardian-secret-long-enough-for-hs256"
+_TEST_ISSUER = "legionforge"
+
+
+def _mint_token(
+    tools: list[str],
+    *,
+    secret: str = _TEST_SECRET,
+    issuer: str = _TEST_ISSUER,
+    expired: bool = False,
+) -> str:
+    now = datetime.now(tz=timezone.utc)
+    exp = now - timedelta(hours=1) if expired else now + timedelta(hours=1)
+    payload = {
+        "jti": "test-jti",
+        "sub": "test-agent",
+        "iss": issuer,
+        "iat": int(now.timestamp()),
+        "exp": int(exp.timestamp()),
+        "run_id": "test-run",
+        "granted_tools": tools,
+        "granted_tables": [],
+        "granted_data_classes": [],
+        "escalation_policy": "deny",
+    }
+    return jwt.encode(payload, secret, algorithm="HS256")
+
+
+def test_check0_skipped_when_no_token():
+    assert _app._check_0_task_token("web_search", None) is None
+
+
+def test_check0_allows_tool_in_granted_list(monkeypatch):
+    monkeypatch.setattr(_app, "_GUARDIAN_AUTH_TOKEN", _TEST_SECRET)
+    monkeypatch.setattr(_app, "_GUARDIAN_TOKEN_ISSUER", _TEST_ISSUER)
+    token = _mint_token(["web_search", "document_summarize"])
+    assert _app._check_0_task_token("web_search", token) is None
+
+
+def test_check0_halts_tool_not_in_granted_list(monkeypatch):
+    monkeypatch.setattr(_app, "_GUARDIAN_AUTH_TOKEN", _TEST_SECRET)
+    monkeypatch.setattr(_app, "_GUARDIAN_TOKEN_ISSUER", _TEST_ISSUER)
+    token = _mint_token(["web_search"])
+    resp = _app._check_0_task_token("code_execute", token)
+    assert resp is not None
+    assert resp.threat_type == "TOOL_SCOPE_VIOLATION"
+    assert not resp.allowed
+
+
+def test_check0_halts_expired_token(monkeypatch):
+    monkeypatch.setattr(_app, "_GUARDIAN_AUTH_TOKEN", _TEST_SECRET)
+    monkeypatch.setattr(_app, "_GUARDIAN_TOKEN_ISSUER", _TEST_ISSUER)
+    token = _mint_token(["web_search"], expired=True)
+    resp = _app._check_0_task_token("web_search", token)
+    assert resp is not None
+    assert resp.threat_type == "INVALID_TASK_TOKEN"
+
+
+def test_check0_halts_wrong_secret(monkeypatch):
+    monkeypatch.setattr(_app, "_GUARDIAN_AUTH_TOKEN", "correct-secret-long-enough-for-hs256")
+    monkeypatch.setattr(_app, "_GUARDIAN_TOKEN_ISSUER", _TEST_ISSUER)
+    token = _mint_token(["web_search"], secret="wrong-secret-long-enough-for-hs256")
+    resp = _app._check_0_task_token("web_search", token)
+    assert resp is not None
+    assert resp.threat_type == "INVALID_TASK_TOKEN"
+
+
+def test_check0_halts_wrong_issuer(monkeypatch):
+    monkeypatch.setattr(_app, "_GUARDIAN_AUTH_TOKEN", _TEST_SECRET)
+    monkeypatch.setattr(_app, "_GUARDIAN_TOKEN_ISSUER", _TEST_ISSUER)
+    token = _mint_token(["web_search"], issuer="evil-issuer")
+    resp = _app._check_0_task_token("web_search", token)
+    assert resp is not None
+    assert resp.threat_type == "INVALID_TASK_TOKEN"
+
+
+def test_check0_halts_when_no_secret_configured(monkeypatch):
+    monkeypatch.setattr(_app, "_GUARDIAN_AUTH_TOKEN", "")
+    token = _mint_token(["web_search"])
+    resp = _app._check_0_task_token("web_search", token)
+    assert resp is not None
+    assert resp.threat_type == "INVALID_TASK_TOKEN"
+
+
+def test_check0_empty_granted_tools_blocks_all(monkeypatch):
+    monkeypatch.setattr(_app, "_GUARDIAN_AUTH_TOKEN", _TEST_SECRET)
+    monkeypatch.setattr(_app, "_GUARDIAN_TOKEN_ISSUER", _TEST_ISSUER)
+    token = _mint_token([])
+    resp = _app._check_0_task_token("web_search", token)
+    assert resp is not None
+    assert resp.threat_type == "TOOL_SCOPE_VIOLATION"
