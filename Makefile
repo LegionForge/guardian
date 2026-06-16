@@ -9,7 +9,7 @@
 
 PYTHON ?= python3
 
-.PHONY: help install-dev test test-cov test-checks test-sdk test-live test-guardian-live lint format build clean
+.PHONY: help install-dev test test-cov test-checks test-sdk test-live test-guardian-live guardian-start guardian-stop lint format build clean
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | \
@@ -50,6 +50,20 @@ test-guardian-live: ## Start Guardian in Docker, run live HTTP tests, tear down
 		echo "▶ Tearing down..."; \
 		GUARDIAN_DB_PASSWORD=guardian-live-test GUARDIAN_PORT=9768 docker compose down -v; \
 		exit $$RESULT
+
+guardian-start: ## Start guardian container using .env.guardian (secrets stay on disk)
+	@test -f .env.guardian || (echo "ERROR: .env.guardian not found — copy .env.example and fill in values" && exit 1)
+	docker run -d \
+		--name legionforge-guardian \
+		--restart unless-stopped \
+		--network guardian_guardian-net \
+		-p 127.0.0.1:9766:9766 \
+		--env-file .env.guardian \
+		legionforge-guardian:latest
+	@echo "Guardian started — check: curl http://localhost:9766/health"
+
+guardian-stop: ## Stop and remove guardian container
+	docker rm -f legionforge-guardian 2>/dev/null || true
 
 lint: ## Check formatting with Black (no changes)
 	$(PYTHON) -m black --check src/ tests/
