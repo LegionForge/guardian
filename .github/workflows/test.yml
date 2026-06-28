@@ -47,7 +47,7 @@ jobs:
         run: python -m black --check --target-version py311 src/ tests/
 
       - name: Upload coverage
-        uses: codecov/codecov-action@6d798873191c83af2a9f2f4f35bc92ffed5f49ad  # v5.1.1
+        uses: codecov/codecov-action@7f8b4b4bde536c465e797be725718b88c5d95e0e  # v5.1.1
         if: always()
         with:
           files: ./coverage.xml
