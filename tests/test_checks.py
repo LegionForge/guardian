@@ -503,7 +503,7 @@ def test_record_check_metrics_increments_sandbox(monkeypatch):
 
 # ── Check 0: Task token ACL ───────────────────────────────────────────────────
 
-_TEST_SECRET = "test-guardian-secret-long-enough-for-hs256"
+_TEST_SECRET = "test-guardian-secret-long-enough-for-hs256"  # gitleaks:allow
 _TEST_ISSUER = "legionforge"
 
 
@@ -563,10 +563,15 @@ def test_check0_halts_expired_token(monkeypatch):
 
 def test_check0_halts_wrong_secret(monkeypatch):
     monkeypatch.setattr(
-        _app, "_GUARDIAN_AUTH_TOKEN", "correct-secret-long-enough-for-hs256"
+        _app,
+        "_GUARDIAN_AUTH_TOKEN",
+        "correct-secret-long-enough-for-hs256",  # gitleaks:allow
     )
     monkeypatch.setattr(_app, "_GUARDIAN_TOKEN_ISSUER", _TEST_ISSUER)
-    token = _mint_token(["web_search"], secret="wrong-secret-long-enough-for-hs256")
+    token = _mint_token(
+        ["web_search"],
+        secret="wrong-secret-long-enough-for-hs256",  # gitleaks:allow
+    )
     resp = _app._check_0_task_token("web_search", token)
     assert resp is not None
     assert resp.threat_type == "INVALID_TASK_TOKEN"
