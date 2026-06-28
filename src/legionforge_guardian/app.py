@@ -510,15 +510,13 @@ async def _refresh_caches() -> None:
             )
             seq_rows = await cur_s.fetchall()
             # Phase 4: load approved, non-expired adaptive rules
-            cur_r = await conn.execute(
-                """
+            cur_r = await conn.execute("""
                 SELECT rule_id::text, rule_type, rule_def
                 FROM threat_rules
                 WHERE status = 'APPROVED'
                   AND (expires_at IS NULL OR expires_at > NOW())
                 ORDER BY approved_at ASC
-                """
-            )
+                """)
             rule_rows = await cur_r.fetchall()
 
         new_tools: dict[str, dict[str, str]] = {}
