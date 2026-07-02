@@ -339,14 +339,26 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
-    """Load caches from DB on startup. Non-fatal if DB is unavailable."""
+    """Load caches from DB on startup, then keep them fresh on a background loop."""
     logger.info("[guardian] Starting up — loading caches...")
     await _refresh_caches()
     logger.info(
         f"[guardian] Ready — {len(_approved_tools)} approved tools, "
         f"{sum(len(v) for v in _agent_sequences.values())} registered sequences"
     )
+
+    async def _cache_refresh_loop() -> None:
+        while True:
+            await asyncio.sleep(_CACHE_TTL_SECONDS)
+            await _refresh_caches()
+
+    _bg_refresh = asyncio.create_task(_cache_refresh_loop())
     yield
+    _bg_refresh.cancel()
+    try:
+        await _bg_refresh
+    except asyncio.CancelledError:
+        pass
     logger.info("[guardian] Shutting down.")
 
 
@@ -498,15 +510,13 @@ async def _refresh_caches() -> None:
             )
             seq_rows = await cur_s.fetchall()
             # Phase 4: load approved, non-expired adaptive rules
-            cur_r = await conn.execute(
-                """
+            cur_r = await conn.execute("""
                 SELECT rule_id::text, rule_type, rule_def
                 FROM threat_rules
                 WHERE status = 'APPROVED'
                   AND (expires_at IS NULL OR expires_at > NOW())
                 ORDER BY approved_at ASC
-                """
-            )
+                """)
             rule_rows = await cur_r.fetchall()
 
         new_tools: dict[str, dict[str, str]] = {}
@@ -1038,7 +1048,7 @@ async def invalidate_cache(http_request: Request) -> JSONResponse:
         {
             "status": "ok",
             "message": "Cache refreshed",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
         }
     )
 
@@ -1086,6 +1096,7 @@ async def health() -> JSONResponse:
     return JSONResponse(
         {
             "status": status,
+            "service": "guardian",
             "version": "4.0.0",
             "cache_age_seconds": cache_age,
             "db_reachable": db_reachable,

@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.2.2
 
       - name: Harden Runner
-        uses: step-security/harden-runner@91182cccc01eb5e619899d080e0dcf722d51ea50  # v2.10.1
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -32,7 +32,7 @@ jobs:
             pypi.org:443
             files.pythonhosted.org:443
 
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -47,7 +47,7 @@ jobs:
         run: python -m black --check --target-version py311 src/ tests/
 
       - name: Upload coverage
-        uses: codecov/codecov-action@6d798873191c83af2a9f2f4f35bc92ffed5f49ad  # v5.1.1
+        uses: codecov/codecov-action@7f8b4b4bde536c465e797be725718b88c5d95e0e  # v5.1.1
         if: always()
         with:
           files: ./coverage.xml

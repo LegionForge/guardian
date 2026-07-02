@@ -16,32 +16,32 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      security-events: write  # zizmor-action uploads SARIF to the Security tab
+      pull-requests: write  # required for the Comment on PR step
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.2.2
 
       - name: Run zizmor
-        uses: woodruffw/zizmor-action@d927e66b39ab8c0c2ca3ef85f8c00aa86e6e2c94  # v2.0.0
+        id: zizmor
+        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa  # v0.5.7
         with:
-          paths: ".github/workflows"
-          format: "sarif"
-          output: "zizmor-report.sarif"
+          inputs: ".github/workflows"
+        # advanced-security defaults to true: the action uploads the SARIF to
+        # the Security tab itself (category "zizmor"). A separate upload-sarif
+        # step would be a duplicate upload and collide on tool/category.
         continue-on-error: true
-
-      - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@7f6f3d32d43d7aace007b1a3d6a8e1d92d456fcc  # v3.26.7
-        if: always() && hashFiles('zizmor-report.sarif') != ''
-        with:
-          sarif_file: zizmor-report.sarif
-          category: "zizmor"
 
       - name: Comment on PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        env:
+          SARIF_FILE: ${{ steps.zizmor.outputs.output-file }}
         with:
           script: |
-            if (require('fs').existsSync('zizmor-report.sarif')) {
-              const report = JSON.parse(require('fs').readFileSync('zizmor-report.sarif', 'utf8'));
+            const sarifFile = process.env.SARIF_FILE;
+            if (sarifFile && require('fs').existsSync(sarifFile)) {
+              const report = JSON.parse(require('fs').readFileSync(sarifFile, 'utf8'));
               const results = report.runs[0]?.results || [];
               if (results.length > 0) {
                 let comment = '## Workflow Security Issues (zizmor)\n\n';
