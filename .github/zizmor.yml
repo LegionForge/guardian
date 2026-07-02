@@ -1,0 +1,10 @@
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        # First-party reusable workflows (shared CI in dev-rig) track main
+        # deliberately — hash-pinning them would require a bump in every
+        # consumer repo for each dev-rig change, for no trust-boundary gain.
+        "LegionForge/*": ref-pin
+        # Everything third-party must be pinned to a commit hash.
+        "*": hash-pin
