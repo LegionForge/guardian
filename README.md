@@ -6,7 +6,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org)
 [![PyPI](https://img.shields.io/pypi/v/legionforge-guardian)](https://pypi.org/project/legionforge-guardian)
 
-💛 [Support this project](https://legionforge.org/donations) — LegionForge is open-source and independently maintained.
+💛 [Donate to LegionForge](https://legionforge.org/donations) — LegionForge is open-source and independently maintained.
 
 ---
 
