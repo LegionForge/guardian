@@ -154,8 +154,6 @@ jobs:
           python3 << 'PYTHON_SCRIPT'
           import toml
           import requests
-          from packaging.version import parse as parse_version
-          from datetime import datetime, timedelta
           
           with open("pyproject.toml") as f:
             config = toml.load(f)
@@ -165,8 +163,6 @@ jobs:
           all_deps = deps + dev_deps
           
           print("Checking dependency freshness (latest released version)...")
-          stale_deps = []
-          
           for dep in all_deps:
             # Parse name and version constraint
             dep_name = dep.split(">")[0].split("<")[0].split("=")[0].split("[")[0].strip()
