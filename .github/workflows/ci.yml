@@ -27,7 +27,9 @@ jobs:
     with:
       source-dirs: "src/legionforge_guardian"
     permissions:
+      contents: read
       security-events: write
+      actions: read
 
   audit:
     uses: LegionForge/dev-rig/.github/workflows/audit.yml@3209b9c8ceb717f71a08a72fd4afc9debcacbd0d
