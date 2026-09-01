@@ -7,7 +7,7 @@
 # Build:  docker build -t legionforge-guardian .
 # Run:    docker compose up
 
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # Security: non-root user
 RUN addgroup --system guardian && adduser --system --ingroup guardian guardian
