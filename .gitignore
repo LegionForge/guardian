@@ -1,0 +1,19 @@
+# Environment files — never commit secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+venv/
+
+# Docker
+docker-compose.override.yml
+
+# OS
+.DS_Store
+*.swp

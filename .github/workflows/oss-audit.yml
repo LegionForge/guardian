@@ -20,10 +20,12 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.2.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Harden Runner
-        uses: step-security/harden-runner@91182cccc01eb5e619899d080e0dcf722d51ea50  # v2.10.1
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -33,29 +35,37 @@ jobs:
             files.pythonhosted.org:443
 
       - name: Set up Python
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.11"
           cache: pip
 
       - name: Install pip-audit
-        run: pip install pip-audit
+        run: pip install "setuptools>=83.0.0" pip-audit
 
       - name: Run pip-audit
-        run: |
-          pip-audit --desc --format json > pip-audit-report.json || true
-          pip-audit --desc || true
+        id: pip-audit
+        continue-on-error: true
+        run: pip-audit . --strict --desc --format json --output pip-audit-report.json
 
-      - name: Check audit results
+      - name: Upload pip-audit report
+        if: always() && hashFiles('pip-audit-report.json') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json
+          retention-days: 90
+
+      - name: Enforce audit result
+        if: always()
+        env:
+          AUDIT_OUTCOME: ${{ steps.pip-audit.outcome }}
         run: |
-          if grep -q '"count": 0' pip-audit-report.json; then
-            echo "✓ No vulnerabilities found"
-            exit 0
-          else
-            echo "⚠ Vulnerabilities detected (see log above)"
+          if [ "$AUDIT_OUTCOME" != "success" ]; then
+            echo "Dependency audit failed; inspect the uploaded JSON report."
             exit 1
           fi
-        continue-on-error: true
+          echo "No known dependency vulnerabilities found."
 
   license-compliance:
     name: License Compliance Check
@@ -64,10 +74,12 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.2.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Harden Runner
-        uses: step-security/harden-runner@91182cccc01eb5e619899d080e0dcf722d51ea50  # v2.10.1
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -77,7 +89,7 @@ jobs:
             files.pythonhosted.org:443
 
       - name: Set up Python
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.11"
           cache: pip
@@ -103,7 +115,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload licenses report
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         if: always()
         with:
           name: licenses-report
@@ -117,10 +129,12 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.2.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Harden Runner
-        uses: step-security/harden-runner@91182cccc01eb5e619899d080e0dcf722d51ea50  # v2.10.1
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -130,7 +144,7 @@ jobs:
             files.pythonhosted.org:443
 
       - name: Set up Python
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.11"
 
@@ -140,8 +154,6 @@ jobs:
           python3 << 'PYTHON_SCRIPT'
           import toml
           import requests
-          from packaging.version import parse as parse_version
-          from datetime import datetime, timedelta
           
           with open("pyproject.toml") as f:
             config = toml.load(f)
@@ -151,8 +163,6 @@ jobs:
           all_deps = deps + dev_deps
           
           print("Checking dependency freshness (latest released version)...")
-          stale_deps = []
-          
           for dep in all_deps:
             # Parse name and version constraint
             dep_name = dep.split(">")[0].split("<")[0].split("=")[0].split("[")[0].strip()
@@ -177,10 +187,12 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.2.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Harden Runner
-        uses: step-security/harden-runner@91182cccc01eb5e619899d080e0dcf722d51ea50  # v2.10.1
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
           allowed-endpoints: |

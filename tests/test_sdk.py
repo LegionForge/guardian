@@ -15,7 +15,6 @@ import respx
 
 from legionforge_guardian.sdk.client import GuardianClient, guardian_check
 
-
 # ── GuardianClient.check ──────────────────────────────────────────────────────
 
 

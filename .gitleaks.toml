@@ -1,0 +1,14 @@
+# gitleaks configuration for LegionForge Guardian
+#
+# Extends the default gitleaks ruleset and adds an allowlist for dummy
+# HS256 secrets used as unit-test fixtures. These are not real credentials
+# — they only exist to exercise the task-token auth checks.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Unit-test fixtures: dummy HS256 secrets, not real credentials"
+regexes = [
+  '''secret-long-enough-for-hs256''',
+]

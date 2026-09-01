@@ -45,7 +45,7 @@ import re
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import jwt
@@ -142,7 +142,7 @@ _GUARDIAN_DESTRUCTIVE_PATTERNS: list[tuple[re.Pattern, str]] = [
             r"\b(password|passwd|api[_\-\s]?key|secret[_\-\s]?key|private[_\-\s]?key"
             r"|access[_\-\s]?token|auth[_\-\s]?token|bearer[_\-\s]?token|credentials?"
             r"|keychain|vault\s+secret|pgp\s+key|ssh\s+key|client[_\-\s]?secret)\b",
-            re.I,
+            re.IGNORECASE,
         ),
         "CREDENTIAL_PROBE",
     ),
@@ -154,7 +154,7 @@ _GUARDIAN_DESTRUCTIVE_PATTERNS: list[tuple[re.Pattern, str]] = [
             r"|intranet|admin[_\-\s]?(panel|console|interface|login|portal)"
             r"|management[_\-\s]?(console|interface|portal)"
             r"|corp(orate)?\s+network|vpn\s+(gateway|server|config))\b",
-            re.I,
+            re.IGNORECASE,
         ),
         "INTERNAL_PROBE",
     ),
@@ -166,7 +166,7 @@ _GUARDIAN_DESTRUCTIVE_PATTERNS: list[tuple[re.Pattern, str]] = [
             r"|~/\.(ssh|aws|gnupg|config|env|bashrc|zshrc)"
             r"|\\\\HKLM\\\\|\\\\HKCU\\\\|%APPDATA%|%SYSTEMROOT%|%LOCALAPPDATA%"
             r"|C:\\\\Windows\\\\System32|C:\\\\Users\\\\[^/\\\\]+\\\\AppData)",
-            re.I,
+            re.IGNORECASE,
         ),
         "SYSTEM_PATH_PROBE",
     ),
@@ -183,7 +183,7 @@ _GUARDIAN_DESTRUCTIVE_PATTERNS: list[tuple[re.Pattern, str]] = [
             r"|wipe\s+(all|the|disks?|drives?|volumes?|database)"
             r"|delete\s+(all|every|the)\s+(files?|data|records?|users?|backups?)"
             r"|shred\s+(all|every|the)\s+(files?|data|disks?))\b",
-            re.I,
+            re.IGNORECASE,
         ),
         "BULK_DESTRUCTIVE",
     ),
@@ -195,7 +195,7 @@ _GUARDIAN_DESTRUCTIVE_PATTERNS: list[tuple[re.Pattern, str]] = [
             r"|legionforge\s+(config|secret|key|prompt)"
             r"|agent[_\-\s]?(config|settings|state|key|identity)"
             r"|what\s+are\s+your\s+instructions?)\b",
-            re.I,
+            re.IGNORECASE,
         ),
         "SELF_PROBE",
     ),
@@ -207,7 +207,7 @@ _GUARDIAN_DESTRUCTIVE_PATTERNS: list[tuple[re.Pattern, str]] = [
             r"|\$\([^)]+\)"  # $(command) subshell
             r"|`[^`]{3,}`"  # `command` backtick execution
             r"|\beval\s*\(",  # eval( calls
-            re.I,
+            re.IGNORECASE,
         ),
         "CMD_INJECTION",
     ),
@@ -219,7 +219,7 @@ _GUARDIAN_DESTRUCTIVE_PATTERNS: list[tuple[re.Pattern, str]] = [
             r"|bypass\s+(the\s+)?(security|auth\w*|authorization|check|filter|guard)"
             r"|disable\s+(the\s+|a\s+)?(security|safeguards?|checks?|filters?|guards?|monitoring|logging)"
             r"|grant\s+(yourself|itself|the\s+agent)(\s+\w+)?\s+(access|permissions?|privileges?))\b",
-            re.I,
+            re.IGNORECASE,
         ),
         "PRIVILEGE_ESCALATION",
     ),
@@ -232,7 +232,7 @@ _GUARDIAN_DESTRUCTIVE_PATTERNS: list[tuple[re.Pattern, str]] = [
             r"|pastebin\.com|hastebin|ghostbin"
             r"|base64\s+(encode|encod)\s+(and\s+)?(send|post|upload)"
             r"|encode\s+(and\s+)?(exfil|send|transmit|upload))\b",
-            re.I,
+            re.IGNORECASE,
         ),
         "DATA_STAGING",
     ),
@@ -245,7 +245,7 @@ _GUARDIAN_DESTRUCTIVE_PATTERNS: list[tuple[re.Pattern, str]] = [
             r"|port\s+(scan|sweep|probe)"
             r"|service\s+(discovery|enumeration|fingerprint)"
             r"|os\s+(detection|fingerprint|version\s+scan))\b",
-            re.I,
+            re.IGNORECASE,
         ),
         "RECONNAISSANCE",
     ),
@@ -292,7 +292,7 @@ def _validate_task_token(token_str: str) -> _GuardianTaskToken | None:
     Uses TASK_TOKEN_SECRET env var (same secret as the framework; set by make guardian-start).
     """
     # _GUARDIAN_AUTH_TOKEN is set at line ~135 (module-level, os.environ.get)
-    secret = _GUARDIAN_AUTH_TOKEN  # noqa: F821 — defined below, resolved at call time
+    secret = _GUARDIAN_AUTH_TOKEN
     if not secret:
         logger.error("[guardian] Cannot validate token — TASK_TOKEN_SECRET not set")
         return None
@@ -310,7 +310,9 @@ def _validate_task_token(token_str: str) -> _GuardianTaskToken | None:
     except jwt.InvalidTokenError as e:
         logger.warning(f"[guardian] Invalid task token: {e}")
         return None
-    except Exception as e:
+    # Last-resort catch after the specific jwt exceptions above -- logs as
+    # unexpected rather than masking it.
+    except Exception as e:  # noqa: BLE001
         logger.error(f"[guardian] Unexpected error decoding token: {e}")
         return None
 
@@ -328,7 +330,7 @@ def _validate_task_token(token_str: str) -> _GuardianTaskToken | None:
         granted_tools=payload.get("granted_tools", []),
         granted_tables=payload.get("granted_tables", []),
         granted_data_classes=payload.get("granted_data_classes", []),
-        expires_at=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
+        expires_at=datetime.fromtimestamp(payload["exp"], tz=UTC),
         parent_token_id=payload.get("parent_token_id"),
         escalation_policy=payload.get("escalation_policy", "deny"),
     )
@@ -339,14 +341,26 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
-    """Load caches from DB on startup. Non-fatal if DB is unavailable."""
+    """Load caches from DB on startup, then keep them fresh on a background loop."""
     logger.info("[guardian] Starting up — loading caches...")
     await _refresh_caches()
     logger.info(
         f"[guardian] Ready — {len(_approved_tools)} approved tools, "
         f"{sum(len(v) for v in _agent_sequences.values())} registered sequences"
     )
+
+    async def _cache_refresh_loop() -> None:
+        while True:
+            await asyncio.sleep(_CACHE_TTL_SECONDS)
+            await _refresh_caches()
+
+    _bg_refresh = asyncio.create_task(_cache_refresh_loop())
     yield
+    _bg_refresh.cancel()
+    try:
+        await _bg_refresh
+    except asyncio.CancelledError:
+        pass
     logger.info("[guardian] Shutting down.")
 
 
@@ -498,15 +512,13 @@ async def _refresh_caches() -> None:
             )
             seq_rows = await cur_s.fetchall()
             # Phase 4: load approved, non-expired adaptive rules
-            cur_r = await conn.execute(
-                """
+            cur_r = await conn.execute("""
                 SELECT rule_id::text, rule_type, rule_def
                 FROM threat_rules
                 WHERE status = 'APPROVED'
                   AND (expires_at IS NULL OR expires_at > NOW())
                 ORDER BY approved_at ASC
-                """
-            )
+                """)
             rule_rows = await cur_r.fetchall()
 
         new_tools: dict[str, dict[str, str]] = {}
@@ -548,7 +560,9 @@ async def _refresh_caches() -> None:
             f"{len(_adaptive_rules)} adaptive rules"
         )
 
-    except Exception as e:
+    # Deliberately broad: any DB/query error must fall back to stale data,
+    # not crash the caller.
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"[guardian] Cache refresh failed (using stale data): {e}")
         # Fall back to in-process registry (populated by register_tool() calls)
         _approved_tools = {
@@ -738,7 +752,8 @@ async def _write_threat_event_direct(
                     json.dumps(metadata or {}),
                 ),
             )
-    except Exception as exc:
+    # Non-fatal by design: a logging failure must never block the request.
+    except Exception as exc:  # noqa: BLE001
         logger.warning(f"[guardian] threat_events write failed (non-fatal): {exc}")
 
 
@@ -791,7 +806,7 @@ async def _append_audit_log_direct(
             last_row = await cur.fetchone()
             prev_hash = last_row["row_hash"] if last_row else _AUDIT_LOG_GENESIS
 
-            ts_now = datetime.now(tz=timezone.utc).isoformat()
+            ts_now = datetime.now(tz=UTC).isoformat()
             cur2 = await conn.execute(
                 """
                 INSERT INTO audit_log (ts, event_type, agent_id, payload, prev_hash, row_hash)
@@ -828,7 +843,9 @@ async def _append_audit_log_direct(
             f"[guardian/audit] Appended seq={seq} event_type={_log_safe(event_type)} agent_id={_log_safe(agent_id)}"
         )
         return seq
-    except Exception as exc:
+    # Non-fatal by design: an audit-log write failure must never block the
+    # action it's auditing.
+    except Exception as exc:  # noqa: BLE001
         logger.warning(f"[guardian/audit] audit_log write failed (non-fatal): {exc}")
         return -1
 
@@ -1038,7 +1055,7 @@ async def invalidate_cache(http_request: Request) -> JSONResponse:
         {
             "status": "ok",
             "message": "Cache refreshed",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(tz=UTC).isoformat(),
         }
     )
 
@@ -1068,7 +1085,9 @@ async def health() -> JSONResponse:
         ) as conn:
             await conn.execute("SELECT 1")
         db_reachable = True
-    except Exception as exc:
+    # A health check must report unreachable on any error, not just specific
+    # driver exceptions.
+    except Exception as exc:  # noqa: BLE001
         logger.debug(f"[guardian/health] DB reachability check failed: {exc}")
 
     cache_age = round(time.monotonic() - _cache_last_refreshed, 2)
@@ -1086,6 +1105,7 @@ async def health() -> JSONResponse:
     return JSONResponse(
         {
             "status": status,
+            "service": "guardian",
             "version": "4.0.0",
             "cache_age_seconds": cache_age,
             "db_reachable": db_reachable,
