@@ -90,7 +90,8 @@ class GuardianClient:
                 r = await client.post(f"{self.url}/check", json=payload)
                 r.raise_for_status()
                 return r.json()
-        except Exception as exc:
+        # Fail-safe by design: any error here must halt (deny), never fail open.
+        except Exception as exc:  # noqa: BLE001
             logger.error(f"[guardian-client] /check failed — treating as halt: {exc}")
             return {
                 "allowed": False,
@@ -124,7 +125,8 @@ class GuardianClient:
                 r = await client.post(f"{self.url}/report", json=body)
                 r.raise_for_status()
                 return r.json()
-        except Exception as exc:
+        # Non-fatal by design: a threat-report failure must never block the caller.
+        except Exception as exc:  # noqa: BLE001
             logger.warning(f"[guardian-client] /report failed (non-fatal): {exc}")
             return {"status": "error", "error": str(exc)}
 
@@ -134,7 +136,8 @@ class GuardianClient:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 r = await client.get(f"{self.url}/health")
                 return r.status_code == 200
-        except Exception:
+        # A health check must report unhealthy on any error, not just specific ones.
+        except Exception:  # noqa: BLE001
             return False
 
 

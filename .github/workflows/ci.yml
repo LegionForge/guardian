@@ -12,34 +12,36 @@ permissions:
 
 jobs:
   lint:
-    uses: LegionForge/dev-rig/.github/workflows/lint.yml@main
+    uses: LegionForge/dev-rig/.github/workflows/lint.yml@3209b9c8ceb717f71a08a72fd4afc9debcacbd0d
     with:
       source-dirs: "src/legionforge_guardian"
 
   test:
-    uses: LegionForge/dev-rig/.github/workflows/test.yml@main
+    uses: LegionForge/dev-rig/.github/workflows/test.yml@3209b9c8ceb717f71a08a72fd4afc9debcacbd0d
     with:
       coverage-source: "src/legionforge_guardian"
       coverage-threshold: 50
 
   sast:
-    uses: LegionForge/dev-rig/.github/workflows/sast.yml@main
+    uses: LegionForge/dev-rig/.github/workflows/sast.yml@3209b9c8ceb717f71a08a72fd4afc9debcacbd0d
     with:
       source-dirs: "src/legionforge_guardian"
     permissions:
+      contents: read
       security-events: write
+      actions: read
 
   audit:
-    uses: LegionForge/dev-rig/.github/workflows/audit.yml@main
+    uses: LegionForge/dev-rig/.github/workflows/audit.yml@3209b9c8ceb717f71a08a72fd4afc9debcacbd0d
 
   secrets:
-    uses: LegionForge/dev-rig/.github/workflows/secrets.yml@main
+    uses: LegionForge/dev-rig/.github/workflows/secrets.yml@3209b9c8ceb717f71a08a72fd4afc9debcacbd0d
 
   sbom:
-    uses: LegionForge/dev-rig/.github/workflows/sbom.yml@main
+    uses: LegionForge/dev-rig/.github/workflows/sbom.yml@3209b9c8ceb717f71a08a72fd4afc9debcacbd0d
 
   trivy:
-    uses: LegionForge/dev-rig/.github/workflows/trivy.yml@main
+    uses: LegionForge/dev-rig/.github/workflows/trivy.yml@3209b9c8ceb717f71a08a72fd4afc9debcacbd0d
     permissions:
       security-events: write
       contents: read
