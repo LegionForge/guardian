@@ -25,7 +25,7 @@ jobs:
           persist-credentials: false
 
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -41,23 +41,31 @@ jobs:
           cache: pip
 
       - name: Install pip-audit
-        run: pip install pip-audit
+        run: pip install "setuptools>=83.0.0" pip-audit
 
       - name: Run pip-audit
-        run: |
-          pip-audit --desc --format json > pip-audit-report.json || true
-          pip-audit --desc || true
+        id: pip-audit
+        continue-on-error: true
+        run: pip-audit . --strict --desc --format json --output pip-audit-report.json
 
-      - name: Check audit results
+      - name: Upload pip-audit report
+        if: always() && hashFiles('pip-audit-report.json') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json
+          retention-days: 90
+
+      - name: Enforce audit result
+        if: always()
+        env:
+          AUDIT_OUTCOME: ${{ steps.pip-audit.outcome }}
         run: |
-          if grep -q '"count": 0' pip-audit-report.json; then
-            echo "✓ No vulnerabilities found"
-            exit 0
-          else
-            echo "⚠ Vulnerabilities detected (see log above)"
+          if [ "$AUDIT_OUTCOME" != "success" ]; then
+            echo "Dependency audit failed; inspect the uploaded JSON report."
             exit 1
           fi
-        continue-on-error: true
+          echo "No known dependency vulnerabilities found."
 
   license-compliance:
     name: License Compliance Check
@@ -71,7 +79,7 @@ jobs:
           persist-credentials: false
 
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -126,7 +134,7 @@ jobs:
           persist-credentials: false
 
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -146,8 +154,6 @@ jobs:
           python3 << 'PYTHON_SCRIPT'
           import toml
           import requests
-          from packaging.version import parse as parse_version
-          from datetime import datetime, timedelta
           
           with open("pyproject.toml") as f:
             config = toml.load(f)
@@ -157,8 +163,6 @@ jobs:
           all_deps = deps + dev_deps
           
           print("Checking dependency freshness (latest released version)...")
-          stale_deps = []
-          
           for dep in all_deps:
             # Parse name and version constraint
             dep_name = dep.split(">")[0].split("<")[0].split("=")[0].split("[")[0].strip()
@@ -188,7 +192,7 @@ jobs:
           persist-credentials: false
 
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
           allowed-endpoints: |
