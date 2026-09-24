@@ -10,6 +10,14 @@ name: Dependabot Auto-Merge
 #
 # Does not rely on repo-level "Allow auto-merge" or branch protection -- this job
 # waits on `gh pr checks --watch` itself before merging directly.
+#
+# Hardening notes (2026-09-24, after zizmor flagged the first copy of this file):
+#   - Gate on github.actor_id (Dependabot's fixed numeric app id), not the
+#     spoofable github.actor string.
+#   - dependabot/fetch-metadata is pinned to a commit SHA, not a floating tag.
+#   - Dependabot metadata outputs are passed through env vars rather than
+#     interpolated directly into the run: shell block, to avoid template
+#     expansion landing untrusted text straight into a script.
 
 on:
   pull_request:
@@ -21,21 +29,24 @@ permissions:
 
 jobs:
   triage:
-    if: github.actor == 'dependabot[bot]'
+    # 49699333 is Dependabot's fixed GitHub App id -- unlike github.actor,
+    # github.actor_id cannot be spoofed by a same-named account.
+    if: github.event.pull_request.user.id == 49699333
     runs-on: ubuntu-latest
     steps:
       - name: Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2.5.0
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Classify risk
         id: risk
+        env:
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          NEW_VERSION: ${{ steps.metadata.outputs.new-version }}
         run: |
           set -euo pipefail
-          UPDATE_TYPE="${{ steps.metadata.outputs.update-type }}"
-          NEW_VERSION="${{ steps.metadata.outputs.new-version }}"
           if [[ "$UPDATE_TYPE" == "version-update:semver-patch" ]] || \
              { [[ "$UPDATE_TYPE" == "version-update:semver-minor" ]] && [[ "$NEW_VERSION" != 0.* ]]; }; then
             echo "level=low" >> "$GITHUB_OUTPUT"
