@@ -1,0 +1,76 @@
+name: Dependabot Auto-Merge
+
+# Policy (mirrors LegionForge/LegionForge#81, approved 2026-09-22):
+#   - patch bump, or minor bump on a >=1.0 package, CI green -> auto-merge (squash),
+#     labeled dependabot-auto-merged, commit body says it was unattended.
+#   - major bump, or any bump on a 0.x package, or CI red -> left open,
+#     labeled dependabot-needs-review, commented with the reason. Jp merges manually.
+#   - Security-fix PRs from Dependabot follow the same version-type rule; a major-version
+#     security fix still halts for manual testing rather than auto-merging.
+#
+# Does not rely on repo-level "Allow auto-merge" or branch protection -- this job
+# waits on `gh pr checks --watch` itself before merging directly.
+#
+# Hardening notes (2026-09-24, after zizmor flagged the first copy of this file):
+#   - Gate on github.actor_id (Dependabot's fixed numeric app id), not the
+#     spoofable github.actor string.
+#   - dependabot/fetch-metadata is pinned to a commit SHA, not a floating tag.
+#   - Dependabot metadata outputs are passed through env vars rather than
+#     interpolated directly into the run: shell block, to avoid template
+#     expansion landing untrusted text straight into a script.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  triage:
+    # 49699333 is Dependabot's fixed GitHub App id -- unlike github.actor,
+    # github.actor_id cannot be spoofed by a same-named account.
+    if: github.event.pull_request.user.id == 49699333
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2.5.0
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Classify risk
+        id: risk
+        env:
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          NEW_VERSION: ${{ steps.metadata.outputs.new-version }}
+        run: |
+          set -euo pipefail
+          if [[ "$UPDATE_TYPE" == "version-update:semver-patch" ]] || \
+             { [[ "$UPDATE_TYPE" == "version-update:semver-minor" ]] && [[ "$NEW_VERSION" != 0.* ]]; }; then
+            echo "level=low" >> "$GITHUB_OUTPUT"
+          else
+            echo "level=high" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Hold high-risk bump for manual review
+        if: steps.risk.outputs.level == 'high'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -euo pipefail
+          gh pr edit "$PR_URL" --add-label dependabot-needs-review
+          gh pr comment "$PR_URL" --body "Held for manual review: major or pre-1.0 (0.x) version bump. CI passing does not guarantee behavioral compatibility here — please test and merge manually."
+
+      - name: Wait for CI and auto-merge low-risk bump
+        if: steps.risk.outputs.level == 'low'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -euo pipefail
+          gh pr checks "$PR_URL" --watch
+          gh pr merge "$PR_URL" --squash --body "Auto-merged autonomously by Claude Code — low-risk (patch/minor) dependency bump, full CI gate green. Not manually reviewed/merged by Jp."
+          gh pr edit "$PR_URL" --add-label dependabot-auto-merged
